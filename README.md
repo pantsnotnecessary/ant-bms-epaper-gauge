@@ -36,7 +36,7 @@ Built with [ESPHome](https://esphome.io) + the
 
 | Part | Notes |
 |------|-------|
-| **Waveshare ESP32-S3-ePaper-1.54 (V2)** | All-in-one ESP32-S3-PICO-1 + 200×200 B/W e-paper (SSD1681). The **V2** revision — pin map below is V2-specific. |
+| **[Waveshare ESP32-S3-ePaper-1.54 (V2)](https://www.waveshare.com/esp32-s3-epaper-1.54.htm)** | All-in-one ESP32-S3-PICO-1 + 200×200 B/W e-paper (SSD1681). The **V2** revision — pin map below is V2-specific. |
 | **ANT BMS (BLE, 2021+ protocol)** | Advertises as `ANT-BLE<model>-<suffix>`. Uses the `ant_bms_ble` platform (not `ant_bms_old_ble`). No password needed for reading. |
 
 ## Quick start
