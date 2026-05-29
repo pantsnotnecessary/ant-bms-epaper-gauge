@@ -10,6 +10,12 @@ substitutions:
   # On-screen overheat warning threshold. BMS itself cuts charge/discharge at
   # 60C, so 50C gives ~10C of "ease off / pull over" headroom before a stranding.
   hot_temp_c: "50"
+  # Energy use per mile (Ah/mi) for the range estimate, by riding style. STARTING
+  # ESTIMATES ONLY — calibrate after a steady ride: ah_used / miles_ridden.
+  # med ~= 40 mph cruise; hard ~= 65 mph (drag scales ~v^2, so 65 is much thirstier).
+  # Range shown is raw-to-empty; subtract your own reserve mentally, or lower these.
+  range_ah_per_mi_med: "1.1"
+  range_ah_per_mi_hard: "1.8"
 
 esphome:
   name: ${name}
@@ -56,6 +62,12 @@ globals:
     type: int
     restore_value: no
     initial_value: '-127'
+  # millis() timestamp of the last good BMS read, for the "time since last read"
+  # counter. No RTC/network on this board, so staleness can only be relative.
+  - id: last_read_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 
 # ---------------- BLE link to the ANT BMS ----------------
 # 100% duty-cycle active scan (window == interval) gives the radio the best
@@ -136,6 +148,9 @@ sensor:
     soc:
       name: "soc"
       id: pack_soc
+      # Stamp every good read so the display can show how stale the data is.
+      on_value:
+        - lambda: 'id(last_read_ms) = millis();'
     total_voltage:
       name: "voltage"
       id: pack_voltage
@@ -186,24 +201,47 @@ display:
       if (!have_temp) tmax = 0.0f;
       bool hot = have_temp && tmax >= ${hot_temp_c}.0f;
 
-      // ---- big SOC number, top ----
-      it.printf(100, 4, id(font_huge), TextAlign::TOP_CENTER, "%.0f%%",
+      // ---- estimated range from live Ah remaining (raw to empty) ----
+      const float AH_PER_MI_MED  = ${range_ah_per_mi_med}f;   // ~40 mph cruise
+      const float AH_PER_MI_HARD = ${range_ah_per_mi_hard}f;  // ~65 mph
+      float ah = id(pack_ah).has_state() ? id(pack_ah).state : 0.0f;
+      int mi_med  = (int)(ah / AH_PER_MI_MED  + 0.5f);
+      int mi_hard = (int)(ah / AH_PER_MI_HARD + 0.5f);
+
+      // ---- big SOC number, top (left-shifted to leave the right edge free) ----
+      it.printf(96, 2, id(font_huge), TextAlign::TOP_CENTER, "%.0f%%",
                 id(pack_soc).has_state() ? id(pack_soc).state : 0);
 
       // ---- max temperature, with HOT flag ----
       if (hot)
-        it.printf(100, 76, id(font_mid), TextAlign::TOP_CENTER, "HOT %.0fC", tmax);
+        it.printf(96, 66, id(font_mid), TextAlign::TOP_CENTER, "HOT %.0fC", tmax);
       else
-        it.printf(100, 76, id(font_mid), TextAlign::TOP_CENTER, "%.0fC", tmax);
+        it.printf(96, 66, id(font_mid), TextAlign::TOP_CENTER, "%.0fC", tmax);
 
-      // ---- voltage ----
-      it.printf(100, 116, id(font_small), TextAlign::TOP_CENTER, "%.1fV",
-                id(pack_voltage).has_state() ? id(pack_voltage).state : 0);
+      // ---- voltage + current ----
+      it.printf(96, 100, id(font_small), TextAlign::TOP_CENTER, "%.1fV  %.0fA",
+                id(pack_voltage).has_state() ? id(pack_voltage).state : 0,
+                id(pack_current).has_state() ? id(pack_current).state : 0);
 
-      // ---- amps + Ah remaining ----
-      it.printf(100, 138, id(font_small), TextAlign::TOP_CENTER, "%.0fA  %.1fAh",
-                id(pack_current).has_state() ? id(pack_current).state : 0,
-                id(pack_ah).has_state() ? id(pack_ah).state : 0);
+      // ---- range: Medium (40) / Hard (65) miles to empty ----
+      it.printf(96, 120, id(font_small), TextAlign::TOP_CENTER, "M%d  H%d mi",
+                mi_med, mi_hard);
+
+      // ---- "time since last good read" stacked down the right edge (no RTC) ----
+      char age[6];
+      if (id(last_read_ms) == 0) {
+        strncpy(age, "--", sizeof(age));
+      } else {
+        uint32_t secs = (millis() - id(last_read_ms)) / 1000;
+        if (secs < 100)       snprintf(age, sizeof(age), "%us", (unsigned) secs);
+        else if (secs < 6000) snprintf(age, sizeof(age), "%um", (unsigned)(secs / 60));
+        else                  snprintf(age, sizeof(age), "%uh", (unsigned)(secs / 3600));
+      }
+      int ay = 4;
+      for (int i = 0; age[i] != '\0'; i++) {
+        it.printf(199, ay, id(font_tiny), TextAlign::TOP_RIGHT, "%c", age[i]);
+        ay += 13;
+      }
 
       // ---- SOC bar along the bottom ----
       int w = (int)((id(pack_soc).has_state() ? id(pack_soc).state : 0) / 100.0 * 196);
@@ -226,3 +264,6 @@ font:
   - file: "gfonts://Roboto@500"
     id: font_small
     size: 18
+  - file: "gfonts://Roboto@500"
+    id: font_tiny
+    size: 12
