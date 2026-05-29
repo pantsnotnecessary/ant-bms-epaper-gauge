@@ -21,6 +21,14 @@ Built with [ESPHome](https://esphome.io) + the
 - **Glanceable overheat warning.** Shows the hottest of the 4 pack temperature
   sensors; at ≥ 50 °C the reading flips to `HOT` and a thick border frames the whole
   screen.
+- **Range estimate.** Shows estimated miles-to-empty for **Medium (≈40 mph)** and
+  **Hard (≈65 mph)** riding, computed from the BMS's live `capacity_remaining` (so
+  pack aging is accounted for automatically). The two Ah/mi rates are edit-at-the-top
+  constants — calibrate them after a steady ride.
+- **Data-staleness counter.** A small "seconds since last good BMS read" readout
+  stacked down the right edge. This board has no RTC/network, so it's relative to
+  boot — but it doubles as an antenna-placement aid: if it climbs past ~30–60 s once
+  mounted, that spot is RF-shadowed and the gauge should be repositioned.
 - **Truly standalone & low power.** The e-paper holds its image with zero power, so
   the panel is powered only for the ~1.5 s it takes to refresh.
 
@@ -48,6 +56,8 @@ with the ANT phone app and close the app — the gauge grabs the connection.
 |---|---|---|
 | `bms_name_prefix` | `ANT-BLE` | BLE name prefix that identifies your BMS. |
 | `hot_temp_c` | `50` | On-screen overheat warning threshold (°C). |
+| `range_ah_per_mi_med` | `1.1` | Ah/mile at medium (~40 mph) — calibrate per bike. |
+| `range_ah_per_mi_hard` | `1.8` | Ah/mile at hard (~65 mph) — calibrate per bike. |
 | `bms_mac` | (a real MAC) | Seed/fallback only — auto-discovery overrides it at runtime. Safe to leave as-is. |
 
 ## What we had to reverse-engineer
@@ -97,10 +107,10 @@ obvious. If you're fighting a similar setup, this is the useful part:
 
 ```
 ┌──────────────────┐
-│       55%        │  SOC (large)
-│      32C         │  hottest pack sensor  → "HOT 52C" + border at ≥ threshold
-│      78.0V       │  pack voltage
-│   3A   44.2Ah    │  current + Ah remaining
+│      55%        8│  SOC (large)   | right edge: secs since last read,
+│      32C        s│  hottest sensor |  stacked ("8s") — "HOT 52C" + full
+│   78.0V  3A      │  voltage + amps |  border at >= threshold
+│   M44  H27 mi    │  range to empty: Medium (40 mph) / Hard (65 mph)
 │ ████████░░░░░░░░ │  SOC bar
 └──────────────────┘
 ```
