@@ -1,0 +1,17 @@
+esphome:
+  name: bms-scanner
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+logger:
+  level: VERBOSE
+
+# Active scan so device names (looking for "22AAUB") show up, not just MACs.
+esp32_ble_tracker:
+  scan_parameters:
+    active: true
+    interval: 100ms
+    window: 100ms
