@@ -19,6 +19,12 @@ substitutions:
 
 esphome:
   name: ${name}
+  on_boot:
+    # Enable the battery-voltage sense path (VBAT_PWR / GPIO17, active-high) so the
+    # ADC on GPIO4 can read the gauge's own LiPo. Runs once, early.
+    priority: 600
+    then:
+      - output.turn_on: vbat_power
   # NOTE: the e-paper is deliberately NOT powered at boot. Powering the panel
   # desensitizes this board's onboard BLE antenna (they share one tiny PCB), so
   # we leave the screen dark — image is retained with zero power — until the BMS
@@ -62,12 +68,6 @@ globals:
     type: int
     restore_value: no
     initial_value: '-127'
-  # millis() timestamp of the last good BMS read, for the "time since last read"
-  # counter. No RTC/network on this board, so staleness can only be relative.
-  - id: last_read_ms
-    type: uint32_t
-    restore_value: no
-    initial_value: '0'
 
 # ---------------- BLE link to the ANT BMS ----------------
 # 100% duty-cycle active scan (window == interval) gives the radio the best
@@ -124,6 +124,9 @@ output:
       number: GPIO6
       inverted: true   # EPD_PWR is ACTIVE-LOW (Waveshare V2 BSP: gpio 0=ON, 1=OFF)
     id: epd_power
+  - platform: gpio
+    pin: GPIO17        # VBAT_PWR — active-high; enables the battery-voltage divider
+    id: vbat_power
 
 # Drive the display only while connected: power the panel, refresh (~1.5s), then
 # cut power again. The panel keeps its image with no power, so the BLE radio runs
@@ -148,9 +151,6 @@ sensor:
     soc:
       name: "soc"
       id: pack_soc
-      # Stamp every good read so the display can show how stale the data is.
-      on_value:
-        - lambda: 'id(last_read_ms) = millis();'
     total_voltage:
       name: "voltage"
       id: pack_voltage
@@ -172,6 +172,17 @@ sensor:
     temperature_4:
       name: "temp4"
       id: t4
+
+  # Gauge's OWN LiPo voltage via on-board ADC: GPIO4 (ADC1_CH3), 1:2 divider so we
+  # multiply by 2. Used for the small device-battery % in the top-right corner.
+  - platform: adc
+    pin: GPIO4
+    id: dev_batt_v
+    attenuation: 12db
+    update_interval: 30s
+    internal: true
+    filters:
+      - multiply: 2.0
 
 # ---------------- e-paper display ----------------
 # Pin map verified against Waveshare's V2 factory source (epaper_config.h):
@@ -208,40 +219,33 @@ display:
       int mi_med  = (int)(ah / AH_PER_MI_MED  + 0.5f);
       int mi_hard = (int)(ah / AH_PER_MI_HARD + 0.5f);
 
-      // ---- big SOC number, top (left-shifted to leave the right edge free) ----
-      it.printf(96, 2, id(font_huge), TextAlign::TOP_CENTER, "%.0f%%",
+      // ---- gauge's own battery %, small top-right corner ----
+      // Approx 1S LiPo curve: 3.30 V = 0 %, 4.20 V = 100 % (rough but fine here).
+      float bv = id(dev_batt_v).has_state() ? id(dev_batt_v).state : 0.0f;
+      int batt = (int)((bv - 3.30f) / 0.90f * 100.0f + 0.5f);
+      if (batt < 0) batt = 0;
+      if (batt > 100) batt = 100;
+      if (bv > 1.0f)   // only show once we have a real reading
+        it.printf(199, 2, id(font_tiny), TextAlign::TOP_RIGHT, "%d%%", batt);
+
+      // ---- big SOC number, top ----
+      it.printf(100, 2, id(font_huge), TextAlign::TOP_CENTER, "%.0f%%",
                 id(pack_soc).has_state() ? id(pack_soc).state : 0);
 
       // ---- max temperature, with HOT flag ----
       if (hot)
-        it.printf(96, 66, id(font_mid), TextAlign::TOP_CENTER, "HOT %.0fC", tmax);
+        it.printf(100, 66, id(font_mid), TextAlign::TOP_CENTER, "HOT %.0fC", tmax);
       else
-        it.printf(96, 66, id(font_mid), TextAlign::TOP_CENTER, "%.0fC", tmax);
+        it.printf(100, 66, id(font_mid), TextAlign::TOP_CENTER, "%.0fC", tmax);
 
       // ---- voltage + current ----
-      it.printf(96, 100, id(font_small), TextAlign::TOP_CENTER, "%.1fV  %.0fA",
+      it.printf(100, 100, id(font_small), TextAlign::TOP_CENTER, "%.1fV  %.0fA",
                 id(pack_voltage).has_state() ? id(pack_voltage).state : 0,
                 id(pack_current).has_state() ? id(pack_current).state : 0);
 
       // ---- range: Medium (40) / Hard (65) miles to empty ----
-      it.printf(96, 120, id(font_small), TextAlign::TOP_CENTER, "M%d  H%d mi",
+      it.printf(100, 120, id(font_small), TextAlign::TOP_CENTER, "M%d  H%d mi",
                 mi_med, mi_hard);
-
-      // ---- "time since last good read" stacked down the right edge (no RTC) ----
-      char age[6];
-      if (id(last_read_ms) == 0) {
-        strncpy(age, "--", sizeof(age));
-      } else {
-        uint32_t secs = (millis() - id(last_read_ms)) / 1000;
-        if (secs < 100)       snprintf(age, sizeof(age), "%us", (unsigned) secs);
-        else if (secs < 6000) snprintf(age, sizeof(age), "%um", (unsigned)(secs / 60));
-        else                  snprintf(age, sizeof(age), "%uh", (unsigned)(secs / 3600));
-      }
-      int ay = 4;
-      for (int i = 0; age[i] != '\0'; i++) {
-        it.printf(199, ay, id(font_tiny), TextAlign::TOP_RIGHT, "%c", age[i]);
-        ay += 13;
-      }
 
       // ---- SOC bar along the bottom ----
       int w = (int)((id(pack_soc).has_state() ? id(pack_soc).state : 0) / 100.0 * 196);

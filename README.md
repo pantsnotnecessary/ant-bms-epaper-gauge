@@ -25,10 +25,9 @@ Built with [ESPHome](https://esphome.io) + the
   **Hard (≈65 mph)** riding, computed from the BMS's live `capacity_remaining` (so
   pack aging is accounted for automatically). The two Ah/mi rates are edit-at-the-top
   constants — calibrate them after a steady ride.
-- **Data-staleness counter.** A small "seconds since last good BMS read" readout
-  stacked down the right edge. This board has no RTC/network, so it's relative to
-  boot — but it doubles as an antenna-placement aid: if it climbs past ~30–60 s once
-  mounted, that spot is RF-shadowed and the gauge should be repositioned.
+- **Device battery indicator.** A small % in the top-right corner shows the gauge's
+  *own* LiPo charge (read from the board's battery ADC on GPIO4 via the 1:2 divider),
+  separate from the bike pack's SOC.
 - **Truly standalone & low power.** The e-paper holds its image with zero power, so
   the panel is powered only for the ~1.5 s it takes to refresh.
 
@@ -107,11 +106,11 @@ obvious. If you're fighting a similar setup, this is the useful part:
 
 ```
 ┌──────────────────┐
-│      55%        8│  SOC (large)   | right edge: secs since last read,
-│      32C        s│  hottest sensor |  stacked ("8s") — "HOT 52C" + full
-│   78.0V  3A      │  voltage + amps |  border at >= threshold
+│      55%      98%│  SOC (large)   | top-right: gauge's own battery %
+│      32C         │  hottest sensor — "HOT 52C" + full-screen border at >= thresh
+│   78.0V  3A      │  pack voltage + current
 │   M44  H27 mi    │  range to empty: Medium (40 mph) / Hard (65 mph)
-│ ████████░░░░░░░░ │  SOC bar
+│ ████████░░░░░░░░ │  pack SOC bar
 └──────────────────┘
 ```
 
