@@ -1,9 +1,9 @@
 substitutions:
   name: "bms-gauge"
-  # Seed/fallback MAC. Auto-discovery (below) overrides this at runtime with the
-  # nearest ANT BMS, so a pack swap needs no re-flash — but a valid seed means the
-  # current pack connects instantly even before discovery kicks in.
-  bms_mac: "22:DD:65:01:80:66"
+  # Placeholder only. Auto-discovery (below) finds the nearest ANT BMS by name and
+  # sets the real address at runtime, so there is nothing to edit here — leave the
+  # all-zero placeholder as-is. (ble_client requires *some* address at config time.)
+  bms_mac: "00:00:00:00:00:00"
   # Any BLE device whose advertised name starts with this is treated as our BMS.
   # ANT units advertise as "ANT-BLE<model>-<suffix>", so the prefix matches any pack.
   bms_name_prefix: "ANT-BLE"

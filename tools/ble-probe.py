@@ -1,7 +1,10 @@
 import asyncio
+import sys
 from bleak import BleakClient, BleakScanner
 
-MAC = "22:DD:65:01:80:66"
+# Pass your BMS MAC as the first arg:  python ble-probe.py AA:BB:CC:DD:EE:FF
+# (find it with tools/ble-scan.ps1). Defaults to a placeholder.
+MAC = sys.argv[1] if len(sys.argv) > 1 else "00:00:00:00:00:00"
 
 frames = []
 
