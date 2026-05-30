@@ -28,6 +28,9 @@ Built with [ESPHome](https://esphome.io) + the
 - **Device battery indicator.** A small % in the top-right corner shows the gauge's
   *own* LiPo charge (read from the board's battery ADC on GPIO4 via the 1:2 divider),
   separate from the bike pack's SOC.
+- **Status LED + side buttons.** The onboard green LED gives an eyes-off read of the
+  gauge's own LiPo, and both side buttons are wired up — power on/off and a manual
+  screen refresh. See [Status LED & buttons](#status-led--buttons).
 - **Truly standalone & low power.** The e-paper holds its image with zero power, so
   the panel is powered only for the ~1.5 s it takes to refresh.
 
@@ -113,6 +116,34 @@ obvious. If you're fighting a similar setup, this is the useful part:
 │ ████████░░░░░░░░ │  pack SOC bar
 └──────────────────┘
 ```
+
+## Status LED & buttons
+
+The board has **one green LED (GPIO3, active-low)** and **two side buttons** — there is
+**no RGB LED**, so the three battery levels are encoded by *blink rate* rather than colour.
+
+**Green LED** — reflects the gauge's *own* LiPo charge (not the bike pack):
+
+| LiPo level | LED |
+|---|---|
+| > 50 % | solid on |
+| 20–50 % | slow blink (~1 s) |
+| ≤ 20 % | fast blink (~250 ms) |
+| device off | dark (no power) |
+
+**PWR button (GPIO18)** — power on/off.
+
+- **Off → on:** press & hold ~3 s. This is a *hardware* re-latch of the LiPo power path;
+  the ESP boots and `on_boot` re-enables everything.
+- **On → off:** a single press drops the GPIO17 LiPo latch and the board powers down. The
+  e-paper keeps showing the last SOC as its "off" screen.
+- ⚠️ **Soft power-off only works on the internal LiPo.** If the gauge is fed from bike/USB
+  5 V, VSYS stays up regardless, so the press is a harmless no-op. This is a board
+  limitation (the PWR button only gates the battery path), not something firmware can fix.
+
+**BOOT button (GPIO0)** — secondary button = **manual screen refresh.** Forces an
+immediate redraw (using the same BLE-antenna-safe power-cycle as the 30 s auto-refresh:
+the panel powers up, redraws over ~2.7 s, then powers back down).
 
 ## Known quirks
 

@@ -68,6 +68,12 @@ globals:
     type: int
     restore_value: no
     initial_value: '-127'
+  # Ticks once per LED-driver interval (250ms). Used to derive the blink phase for
+  # the green status LED so different battery levels blink at different rates.
+  - id: led_tick
+    type: int
+    restore_value: no
+    initial_value: '0'
 
 # ---------------- BLE link to the ANT BMS ----------------
 # 100% duty-cycle active scan (window == interval) gives the radio the best
@@ -125,8 +131,13 @@ output:
       inverted: true   # EPD_PWR is ACTIVE-LOW (Waveshare V2 BSP: gpio 0=ON, 1=OFF)
     id: epd_power
   - platform: gpio
-    pin: GPIO17        # VBAT_PWR — active-high; enables the battery-voltage divider
-    id: vbat_power
+    pin: GPIO17        # BATT_Control — the LiPo power latch (Vbat->VSYS). Held on, it
+    id: vbat_power     # keeps the board alive on battery AND enables battery sense;
+                       # driving it OFF disconnects the LiPo and powers the board down.
+  - platform: gpio
+    pin: GPIO3
+    inverted: true     # onboard GREEN status LED is active-low (0 = lit)
+    id: green_led_pin
 
 # Drive the display only while connected: power the panel, refresh (~1.5s), then
 # cut power again. The panel keeps its image with no power, so the BLE radio runs
@@ -143,6 +154,71 @@ interval:
             - component.update: epd
             - delay: 2500ms                 # let the full refresh finish
             - output.turn_off: epd_power     # image retained; radio back in clean air
+
+  # Green status LED driven off the gauge's OWN LiPo level (not the bike pack):
+  #   >50% = solid   |   20-50% = slow blink (~1s)   |   <=20% = fast blink (~250ms)
+  # Off-when-device-off is automatic (no power -> no LED). Driving GPIO3 does NOT touch
+  # the e-paper power (GPIO6), so it has no effect on the BLE antenna.
+  - interval: 250ms
+    then:
+      - lambda: |-
+          id(led_tick)++;
+          float bv = id(dev_batt_v).has_state() ? id(dev_batt_v).state : 0.0f;
+          if (bv <= 1.0f) {                  // no real reading yet -> stay dark
+            id(green_led_pin).turn_off();
+            return;
+          }
+          int batt = (int)((bv - 3.30f) / 0.90f * 100.0f + 0.5f);
+          if (batt < 0) batt = 0;
+          if (batt > 100) batt = 100;
+          bool lit;
+          if (batt > 50) {
+            lit = true;                              // solid
+          } else if (batt > 20) {
+            lit = ((id(led_tick) / 4) % 2) == 0;     // slow blink ~1s
+          } else {
+            lit = (id(led_tick) % 2) == 0;           // fast blink ~250ms
+          }
+          if (lit) id(green_led_pin).turn_on(); else id(green_led_pin).turn_off();
+
+# ---------------- Side buttons ----------------
+binary_sensor:
+  # PWR button (GPIO18). Pressing it powers the gauge OFF by dropping the GPIO17 LiPo
+  # latch. NOTE: this only actually powers down when running on the internal LiPo — if
+  # the gauge is fed from bike/USB 5V, VSYS stays up and the press is a no-op. Power-ON
+  # from the off state is hardware: press & hold PWR ~3s to re-latch power and boot.
+  # The e-paper is left untouched so it keeps showing the last SOC as the "off" screen.
+  - platform: gpio
+    pin:
+      number: GPIO18
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    id: button_pwr
+    on_press:
+      then:
+        - lambda: 'gpio_hold_dis(GPIO_NUM_17);'   # release any pin-hold so the off takes
+        - output.turn_off: vbat_power             # drop the latch -> board powers off (LiPo)
+        - output.turn_on: vbat_power              # only reached if still alive on USB/5V
+
+  # BOOT button (GPIO0) = secondary button -> manual screen refresh. Replicates the 30s
+  # interval's power-cycle so it stays BLE-antenna-safe (panel powered only during refresh).
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    id: button_refresh
+    on_press:
+      then:
+        - output.turn_on: epd_power
+        - delay: 200ms
+        - component.update: epd
+        - delay: 2500ms
+        - output.turn_off: epd_power
 
 # ---------------- Sensors we display ----------------
 sensor:
@@ -179,7 +255,7 @@ sensor:
     pin: GPIO4
     id: dev_batt_v
     attenuation: 12db
-    update_interval: 30s
+    update_interval: 10s   # fast enough that the LED blink-rate tracks the LiPo level
     internal: true
     filters:
       - multiply: 2.0
