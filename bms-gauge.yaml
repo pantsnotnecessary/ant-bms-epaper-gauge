@@ -74,6 +74,13 @@ globals:
     type: int
     restore_value: no
     initial_value: '0'
+  # Logical power state, toggled by the PWR button. When the gauge is fed from bike/USB
+  # 5V the PWR button can't physically cut VSYS, so this flag carries the "off" state in
+  # firmware: it forces the green LED dark. Resets to false on a real (hardware) power-on.
+  - id: dev_off
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 # ---------------- BLE link to the ANT BMS ----------------
 # 100% duty-cycle active scan (window == interval) gives the radio the best
@@ -163,6 +170,10 @@ interval:
     then:
       - lambda: |-
           id(led_tick)++;
+          if (id(dev_off)) {                 // PWR button turned the gauge off -> LED dark
+            id(green_led_pin).turn_off();
+            return;
+          }
           float bv = id(dev_batt_v).has_state() ? id(dev_batt_v).state : 0.0f;
           if (bv <= 1.0f) {                  // no real reading yet -> stay dark
             id(green_led_pin).turn_off();
@@ -198,9 +209,19 @@ binary_sensor:
     id: button_pwr
     on_press:
       then:
-        - lambda: 'gpio_hold_dis(GPIO_NUM_17);'   # release any pin-hold so the off takes
-        - output.turn_off: vbat_power             # drop the latch -> board powers off (LiPo)
-        - output.turn_on: vbat_power              # only reached if still alive on USB/5V
+        # Toggle the logical power state. Going OFF: kill the LED immediately, then drop
+        # the GPIO17 latch (board powers down on LiPo; stays alive but logically-off with
+        # the LED dark on USB/5V). Going back ON: clear the flag and the LED resumes.
+        - lambda: |-
+            id(dev_off) = !id(dev_off);
+            if (id(dev_off)) id(green_led_pin).turn_off();
+        - if:
+            condition:
+              lambda: 'return id(dev_off);'
+            then:
+              - lambda: 'gpio_hold_dis(GPIO_NUM_17);'   # release any pin-hold so the off takes
+              - output.turn_off: vbat_power             # drop the latch -> powers off (LiPo)
+              - output.turn_on: vbat_power              # only reached if still alive on USB/5V
 
   # BOOT button (GPIO0) = secondary button -> manual screen refresh. Replicates the 30s
   # interval's power-cycle so it stays BLE-antenna-safe (panel powered only during refresh).

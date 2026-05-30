@@ -131,15 +131,16 @@ The board has **one green LED (GPIO3, active-low)** and **two side buttons** —
 | ≤ 20 % | fast blink (~250 ms) |
 | device off | dark (no power) |
 
-**PWR button (GPIO18)** — power on/off.
+**PWR button (GPIO18)** — power on/off (toggle).
 
-- **Off → on:** press & hold ~3 s. This is a *hardware* re-latch of the LiPo power path;
-  the ESP boots and `on_boot` re-enables everything.
-- **On → off:** a single press drops the GPIO17 LiPo latch and the board powers down. The
-  e-paper keeps showing the last SOC as its "off" screen.
-- ⚠️ **Soft power-off only works on the internal LiPo.** If the gauge is fed from bike/USB
-  5 V, VSYS stays up regardless, so the press is a harmless no-op. This is a board
-  limitation (the PWR button only gates the battery path), not something firmware can fix.
+- **On → off:** a single press drops the GPIO17 LiPo latch to power the board down, and
+  **turns the green LED off**. The e-paper keeps showing the last SOC as its "off" screen.
+- **Off → on:** on the internal LiPo this is a *hardware* re-latch — press & hold ~3 s and
+  the ESP boots fresh (LED resumes). On USB/bike 5 V (see below) a press toggles it back on.
+- ⚠️ **Soft power-off can't cut VSYS on external 5 V.** If the gauge is fed from bike/USB
+  5 V the board physically stays powered, so "off" is carried in firmware: the green LED
+  goes dark and the gauge is logically off until you press PWR again. (The PWR button only
+  gates the battery path — this is a board limitation, not something firmware can change.)
 
 **BOOT button (GPIO0)** — secondary button = **manual screen refresh.** Forces an
 immediate redraw (using the same BLE-antenna-safe power-cycle as the 30 s auto-refresh:
